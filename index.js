@@ -30,7 +30,7 @@ var ZMTP = module.exports = function (options) {
 };
 util.inherits(ZMTP, Transform);
 
-ZMTP.prototype._write = function (chunk, enc, callback) {
+ZMTP.prototype._transform = function (chunk, enc, callback) {
   var self = this;
   var offset = 0;
   var byte;
