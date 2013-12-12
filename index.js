@@ -27,6 +27,28 @@ var MECHANISM_LENGTH = 20;
 // Then we have 31 * 0x0 filler.
 var FILLER = new Buffer(31);
 FILLER.fill('\0');
+// After filler comes a handshake. Since handshake is actually a command, let's
+// describe command format first:
+//
+//    ;   A command is a single long or short frame
+//    command = command-size command-body
+//    command-size = %x04 short-size | %x06 long-size
+//    short-size = OCTET          ; Body is 0 to 255 octets
+//    long-size = 8OCTET          ; Body is 0 to 2^63-1 octets
+//    command-body = command-name command-data
+//    command-name = OCTET 1*255command-name-char
+//    command-name-char = ALPHA
+//    command-data = *OCTET
+//
+// So, each command starts with `command-size` field. For commands bigger than
+// 255 octets, we have to use the `long-size` format, where `command-size`
+// starts with x06 followed by 8 octets of size.
+// Otherwise, we can roll with `short-size`, which starts with x04 followed by
+// one octet of size.
+// `command-body` (next after `command-size`) consists of one octet of command
+// name size, command name (maximum 255 chars), followed by command data (bunch
+// of octets, no length indication needed).
+//
 
 var ZMTP = module.exports = function (options) {
   if (!(this instanceof ZMTP)) {
