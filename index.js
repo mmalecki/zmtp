@@ -16,7 +16,8 @@ var SIGNATURE_LENGTH = 10;
 // recognize the protocol version.
 var VERSION_MAJOR = new Buffer([3]);
 var VERSION_MINOR = new Buffer([0]);
-// Next is socket type. Here it goes (PAIR === x00, PUSH === x08):
+// Next is socket mechanism.
+var MECHANISM_LENGTH = 20;
 var socketTypes = ['PAIR', 'PUB', 'SUB', 'REQ', 'REP', 'DEALER', 'ROUTER', 'PULL', 'PUSH'];
 // (parser state -> 'socket_type').
 // Here's where the RFC becomes confusing: next up in greeting is identity.
@@ -28,9 +29,28 @@ var ZMTP = module.exports = function (options) {
   this._state = 'start';
   this._signature = new Buffer(SIGNATURE_LENGTH);
   this._signatureBytes = 0;
+
+  this._mechanism = new Buffer(MECHANISM_LENGTH);
+  this._mechanismBytes = 0;
   Transform.call(this, { objectMode: true });
 };
 util.inherits(ZMTP, Transform);
+
+ZMTP.prototype._parseSignature = function () {
+  var signature = this._signature;
+  if (signature.readUInt8(0) !== 0xFF) {
+    return this.emit('error', new Error('Invalid first byte of signature, xFF expected, got ' + byte));
+  }
+
+  if (signature.readUInt8(SIGNATURE_LENGTH - 1) !== 0x7F) {
+    return this.emit('error', new Error('Invalid last byte of signature, x7F expected, got ' + byte));
+  }
+};
+
+ZMTP.prototype._parseMechanism = function () {
+  var mechanism = this._mechanism;
+  console.log('mechanism', mechanism.toString('hex'));
+};
 
 ZMTP.prototype._transform = function (chunk, enc, callback) {
   var self = this;
@@ -38,6 +58,7 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
   var byte;
   var tmpBuffer = new Buffer(1);
   var signature = this._signature;
+  var mechanism = this._mechanism;
 
   console.log(chunk.toString('hex'), chunk.length);
   while (offset < chunk.length) {
@@ -48,17 +69,7 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
       }
 
       if (this._signatureBytes === SIGNATURE_LENGTH) {
-        // We have whole signature. Parse it now.
-        if (signature.readUInt8(0) !== 0xFF) {
-          return this.emit('error', new Error('Invalid first byte of signature, xFF expected, got ' + byte));
-        }
-
-        // TODO: verify 8 x00 bytes?
-
-        if (signature.readUInt8(SIGNATURE_LENGTH - 1) !== 0x7F) {
-          return this.emit('error', new Error('Invalid last byte of signature, x7F expected, got ' + byte));
-        }
-
+        this._parseSignature();
         this.push(signature);
         this._state = 'version-major';
       }
@@ -76,6 +87,17 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
       }
       this.push(VERSION_MINOR);
       this._state = 'mechanism';
+    }
+    else if (this._state === 'mechanism') {
+      if (this._mechanismBytes < MECHANISM_LENGTH) {
+        mechanism[this._mechanismBytes++] = byte;
+      }
+
+      if (this._mechanismBytes === MECHANISM_LENGTH) {
+        this._parseMechanism();
+        // TODO: reply with something
+        this._state = 'as-server';
+      }
     }
   }
   callback();
