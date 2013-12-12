@@ -11,5 +11,5 @@ setTimeout(function () {
   var netSock = net.connect({ host: '127.0.0.1', port: 1337 }, function () {
     zmqSock.send('hello, ZMTP!');
   });
-  netSock.pipe(zmtp);
+  netSock.pipe(zmtp).pipe(netSock);
 }, 100);
