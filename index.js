@@ -33,6 +33,8 @@ var ZMTP = module.exports = function (options) {
     return new ZMTP(options);
   }
 
+  this.type = options.type.toUpperCase();
+
   this._state = 'start';
   this._signature = new Buffer(SIGNATURE_LENGTH);
   this._signatureBytes = 0;
@@ -64,7 +66,34 @@ ZMTP.prototype._parseMechanism = function () {
   }
 };
 
+ZMTP.prototype._writeCommand = function (name, data) {
+  // If command body (name + data) is smaller than 255 octets, we can use the
+  // shorter length specifier: x04 octet
+  // Otherwise, x06 8 * octet.
+  var length = name.length + data.length;
+  if (length <= 0xFF) {
+    this.push(new Buffer([ 0x04, length ]));
+  }
+  else {
+    // TODO: longer packets
+  }
+
+  this.push(name);
+  this.push(data);
+};
+
 ZMTP.prototype._nullHandshake = function () {
+  // NULL handshake metadata format is: key length octet, key, value length in
+  // 4 octets and value.
+  var key = 'Socket-Type';
+  var value = this.type;
+  var length = key.length + value.length + 5;
+  var metadata = new Buffer(length);
+  metadata.writeUInt8(key.length, 0);
+  metadata.write(key, 1);
+  metadata.writeUInt32BE(value.length, key.length + 1);
+  metadata.write(value, key.length + 5);
+  this._writeCommand('\x05READY', metadata);
 };
 
 ZMTP.prototype._transform = function (chunk, enc, callback) {
@@ -128,6 +157,7 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
     }
     else if (this._state === 'handshake') {
       this._nullHandshake();
+      this._state = 'traffic';
     }
   }
   callback();
