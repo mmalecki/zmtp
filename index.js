@@ -1,5 +1,6 @@
 var Transform = require('stream').Transform;
 var util = require('util');
+var bufferEqual = require('buffer-equal');
 
 //
 // http://rfc.zeromq.org/spec:23
@@ -16,15 +17,21 @@ var SIGNATURE_LENGTH = 10;
 // recognize the protocol version.
 var VERSION_MAJOR = new Buffer([3]);
 var VERSION_MINOR = new Buffer([0]);
-// Next is socket mechanism.
+// Next is security mechanism. There are 3 of those (NULL, CURVE, PLAIN), we
+// only support NULL:
+var MECHANISM_NULL = new Buffer('NULL\0'); // No authentication or confidentiality.
 var MECHANISM_LENGTH = 20;
-var socketTypes = ['PAIR', 'PUB', 'SUB', 'REQ', 'REP', 'DEALER', 'ROUTER', 'PULL', 'PUSH'];
-// (parser state -> 'socket_type').
-// Here's where the RFC becomes confusing: next up in greeting is identity.
+// Next up is `as-server` field. Its value is either 0 or 1, depending on
+// security mechanism. For NULL it's always 0 and NULL is the only mechanism
+// we support rigth now.
+// Then we have 31 * 0x0 filler.
+var FILLER = new Buffer(31);
+FILLER.fill('\0');
 
 var ZMTP = module.exports = function (options) {
-  if (!(this instanceof ZMTP))
+  if (!(this instanceof ZMTP)) {
     return new ZMTP(options);
+  }
 
   this._state = 'start';
   this._signature = new Buffer(SIGNATURE_LENGTH);
@@ -32,6 +39,8 @@ var ZMTP = module.exports = function (options) {
 
   this._mechanism = new Buffer(MECHANISM_LENGTH);
   this._mechanismBytes = 0;
+
+  this._fillerBytes = 0;
   Transform.call(this, { objectMode: true });
 };
 util.inherits(ZMTP, Transform);
@@ -49,14 +58,19 @@ ZMTP.prototype._parseSignature = function () {
 
 ZMTP.prototype._parseMechanism = function () {
   var mechanism = this._mechanism;
-  console.log('mechanism', mechanism.toString('hex'));
+  // TODO: support other mechanisms
+  if (!bufferEqual(mechanism.slice(0, MECHANISM_NULL.length), MECHANISM_NULL)) {
+    this.emit('error', new Error('Unsupported mechanism'));
+  }
+};
+
+ZMTP.prototype._nullHandshake = function () {
 };
 
 ZMTP.prototype._transform = function (chunk, enc, callback) {
   var self = this;
   var offset = 0;
   var byte;
-  var tmpBuffer = new Buffer(1);
   var signature = this._signature;
   var mechanism = this._mechanism;
 
@@ -96,8 +110,24 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
       if (this._mechanismBytes === MECHANISM_LENGTH) {
         this._parseMechanism();
         // TODO: reply with something
+        this.push(mechanism);
         this._state = 'as-server';
       }
+    }
+    else if (this._state === 'as-server') {
+      // TODO: for non-NULL mechanism, we need to support non-zero `as-server` field
+      this.push(new Buffer([0]));
+      this._state = 'filler';
+    }
+    else if (this._state === 'filler') {
+      ++this._fillerBytes;
+      if (this._fillerBytes === FILLER.length) {
+        this.push(FILLER);
+        this._state = 'handshake';
+      }
+    }
+    else if (this._state === 'handshake') {
+      this._nullHandshake();
     }
   }
   callback();
