@@ -2,7 +2,7 @@ var Transform = require('stream').Transform;
 var util = require('util');
 
 //
-// http://rfc.zeromq.org/spec:15
+// http://rfc.zeromq.org/spec:23
 //
 // ZMTP is actually quite nice. Here's a human-readable specs for my own
 // reference.
@@ -11,10 +11,11 @@ var util = require('util');
 // First in greeting comes a signature, 10 bytes: xFF 8 * x00 x7F (parser state
 // -> 'signature').
 var SIGNATURE_LENGTH = 10;
-// Next comes protocol version, always x01 (parser state -> 'revision'). We
-// should error out here if we can't recognize the protocol version.
-var VERSION_MAJOR = 3;
-var VERSION_MINOR = 0;
+// Next comes protocol version, x03 x00 for ZMTP 3.0. (parser state ->
+// 'version-major', 'version-minor'). We should error out here if we can't
+// recognize the protocol version.
+var VERSION_MAJOR = new Buffer([3]);
+var VERSION_MINOR = new Buffer([0]);
 // Next is socket type. Here it goes (PAIR === x00, PUSH === x08):
 var socketTypes = ['PAIR', 'PUB', 'SUB', 'REQ', 'REP', 'DEALER', 'ROUTER', 'PULL', 'PUSH'];
 // (parser state -> 'socket_type').
@@ -63,12 +64,18 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
       }
     }
     else if (this._state === 'version-major') {
-      if (byte !== VERSION_MAJOR) {
+      if (byte !== VERSION_MAJOR[0]) {
         this.emit('error', new Error('Invalid revision, expected x03, got ' + byte));
       }
-      tmpBuffer.writeUInt8(byte, 0);
-      this.push(tmpBuffer);
+      this.push(VERSION_MAJOR);
       this._state = 'version-minor';
+    }
+    else if (this._state === 'version-minor') {
+      if (byte !== VERSION_MINOR[0]) {
+        this.emit('error', new Error('Invalid minor version, expected x00, got ' + byte));
+      }
+      this.push(VERSION_MINOR);
+      this._state = 'mechanism';
     }
   }
   callback();
