@@ -13,7 +13,8 @@ var util = require('util');
 var SIGNATURE_LENGTH = 10;
 // Next comes protocol version, always x01 (parser state -> 'revision'). We
 // should error out here if we can't recognize the protocol version.
-var REVISION = 1;
+var VERSION_MAJOR = 3;
+var VERSION_MINOR = 0;
 // Next is socket type. Here it goes (PAIR === x00, PUSH === x08):
 var socketTypes = ['PAIR', 'PUB', 'SUB', 'REQ', 'REP', 'DEALER', 'ROUTER', 'PULL', 'PUSH'];
 // (parser state -> 'socket_type').
@@ -34,6 +35,7 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
   var self = this;
   var offset = 0;
   var byte;
+  var tmpBuffer = new Buffer(1);
   var signature = this._signature;
 
   console.log(chunk.toString('hex'), chunk.length);
@@ -56,14 +58,17 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
           return this.emit('error', new Error('Invalid last byte of signature, x7F expected, got ' + byte));
         }
 
-        this._state = 'revision';
+        this.push(signature);
+        this._state = 'version-major';
       }
     }
-    else if (this._state === 'revision') {
-      if (byte !== REVISION) {
-        this.emit('error', new Error('Invalid revision, expected x01, got ' + byte));
-        this._state = 'socket_type';
+    else if (this._state === 'version-major') {
+      if (byte !== VERSION_MAJOR) {
+        this.emit('error', new Error('Invalid revision, expected x03, got ' + byte));
       }
+      tmpBuffer.writeUInt8(byte, 0);
+      this.push(tmpBuffer);
+      this._state = 'version-minor';
     }
   }
   callback();
