@@ -1,0 +1,11 @@
+{
+  "name": "zmtp",
+  "version": "0.0.0",
+  "author": "Maciej Małecki <me@mmalecki.com>",
+  "dependencies": {
+    "buffer-equal": "0.0.0"
+  },
+  "devDependencies": {
+    "zmq": "~2.6.0"
+  }
+}
