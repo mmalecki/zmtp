@@ -49,6 +49,20 @@ FILLER.fill('\0');
 // name size, command name (maximum 255 chars), followed by command data (bunch
 // of octets, no length indication needed).
 //
+// *BUT* there's also framing. ZMTP's framing format is pretty simple. First
+// comes one byte of flags, next size (1 or 8 octets, depending whether this
+// is a long frame, as determined by a flag) and then frame body.
+// Flags are as follows:
+//
+//   * bits 7 - 3: reserved, always 0
+//   * bit 2: COMMAND, 1 for command frame and 0 for message frame
+//   * bit 1: LONG, 1 for long frame (the size field will be 8 octects)
+//   * bit 0: MORE, 1 if there are more frames to follow (incomplete frame),
+//     0 if this is the last frame for this message
+//
+var FRAME_COMMAND = 1 << 2;
+var FRAME_LONG = 1 << 1;
+var FRAME_MORE = 1 << 0;
 
 var ZMTP = module.exports = function (options) {
   if (!(this instanceof ZMTP)) {
@@ -65,6 +79,10 @@ var ZMTP = module.exports = function (options) {
   this._mechanismBytes = 0;
 
   this._fillerBytes = 0;
+
+  this._frames = [];
+  this._frameBodyBytes = 0;
+
   Transform.call(this, { objectMode: true });
 };
 util.inherits(ZMTP, Transform);
@@ -118,14 +136,34 @@ ZMTP.prototype._nullHandshake = function () {
   this._writeCommand('\x05READY', metadata);
 };
 
+ZMTP.prototype._parseCommand = function (body) {
+};
+
+ZMTP.prototype._parseMessage = function (body) {
+  this.emit('message', body);
+};
+
+ZMTP.prototype._processFrames = function () {
+  // TODO: this is a naive approach where we concat all our frames to process
+  // them. We might not have to do that, which'd be beneficial for memory usage.
+  var body = Buffer.concat(this._frames.map(function (frame) {
+    return frame.body;
+  }));
+
+  return this._frames[0].command
+    ? this._parseCommand(body)
+    : this._parseMessage(body);
+};
+
 ZMTP.prototype._transform = function (chunk, enc, callback) {
   var self = this;
   var offset = 0;
   var byte;
   var signature = this._signature;
   var mechanism = this._mechanism;
+  var thisFrame;
 
-  console.log(chunk.toString('hex'), chunk.length);
+  console.log(chunk.toString('hex'), chunk.length, this._state);
   while (offset < chunk.length) {
     byte = chunk.readUInt8(offset++);
     if (this._state === 'start') {
@@ -174,12 +212,36 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
       ++this._fillerBytes;
       if (this._fillerBytes === FILLER.length) {
         this.push(FILLER);
-        this._state = 'handshake';
+        this._nullHandshake();
+        this._state = 'frame-header-flags';
       }
     }
-    else if (this._state === 'handshake') {
-      this._nullHandshake();
-      this._state = 'traffic';
+    else if (this._state === 'frame-header-flags') {
+      // TODO: support long frames
+      thisFrame = {
+        more: !!(byte & FRAME_MORE),
+        command: !!(byte & FRAME_COMMAND)
+      };
+      this._frameBodyBytes = 0;
+      this._frames.push(thisFrame);
+      this._state = 'frame-header-size';
+    }
+    else if (this._state === 'frame-header-size') {
+      thisFrame = this._frames[this._frames.length - 1];
+      thisFrame.length = byte;
+      thisFrame.body = new Buffer(thisFrame.length);
+      this._state = 'frame-body';
+    }
+    else if (this._state === 'frame-body') {
+      thisFrame = this._frames[this._frames.length - 1];
+      thisFrame.body[this._frameBodyBytes++] = byte;
+      if (this._frameBodyBytes === thisFrame.length) {
+        if (!thisFrame.more) {
+          this._processFrames();
+          this._frames.length = 0;
+        }
+        this._state = 'frame-header-flags';
+      }
     }
   }
   callback();
