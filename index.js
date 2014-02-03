@@ -45,6 +45,8 @@ FILLER.fill('\0');
 // starts with x06 followed by 8 octets of size.
 // Otherwise, we can roll with `short-size`, which starts with x04 followed by
 // one octet of size.
+var COMMAND_SHORT = 0x04;
+var COMMAND_LONG = 0x06;
 // `command-body` (next after `command-size`) consists of one octet of command
 // name size, command name (maximum 255 chars), followed by command data (bunch
 // of octets, no length indication needed).
@@ -112,7 +114,7 @@ ZMTP.prototype._writeCommand = function (name, data) {
   // Otherwise, x06 8 * octet.
   var length = name.length + data.length;
   if (length <= 0xFF) {
-    this.push(new Buffer([ 0x04, length ]));
+    this.push(new Buffer([ COMMAND_SHORT, length ]));
   }
   else {
     // TODO: longer packets
