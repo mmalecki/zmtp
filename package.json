@@ -5,7 +5,11 @@
   "dependencies": {
     "buffer-equal": "0.0.0"
   },
+  "scripts": {
+    "test": "tap test/*-test.js"
+  },
   "devDependencies": {
-    "zmq": "~2.6.0"
+    "zmq": "~2.6.0",
+    "tap": "~0.4.8"
   }
 }
