@@ -11,7 +11,7 @@ test('zmtp/pull-push', function (t) {
   var zmqSock = zmq.socket('push');
   zmqSock.bindSync('tcp://127.0.0.1:' + PORT);
 
-  var zmtp = connect(PORT, function (err) {
+  var zmtp = connect(PORT, { type: 'pull' }, function (err) {
     t.ok(!err, 'Connecting should work');
     zmqSock.send(HELLO);
   });
