@@ -178,7 +178,6 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
   var mechanism = this._mechanism;
   var thisFrame;
 
-  console.log(chunk.toString('hex'), chunk.length, this._state);
   while (offset < chunk.length) {
     byte = chunk.readUInt8(offset++);
     if (this._state === 'start') {
