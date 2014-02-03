@@ -62,9 +62,6 @@ var COMMAND_LONG = 0x06;
 //   * bit 0: MORE, 1 if there are more frames to follow (incomplete frame),
 //     0 if this is the last frame for this message
 //
-var FRAME_COMMAND = 1 << 2;
-var FRAME_LONG = 1 << 1;
-var FRAME_MORE = 1 << 0;
 
 var ZMTP = module.exports = function (options) {
   if (!(this instanceof ZMTP)) {
@@ -105,6 +102,21 @@ ZMTP.prototype._parseMechanism = function () {
   // TODO: support other mechanisms
   if (!bufferEqual(mechanism.slice(0, MECHANISM_NULL.length), MECHANISM_NULL)) {
     this.emit('error', new Error('Unsupported mechanism'));
+  }
+};
+
+ZMTP.prototype._writeFramed = function (isCommand, data) {
+  var totalLength = data.length;
+  var frameBody, frame, end;
+
+  for (var i = 0; i < data.length; i += 256) {
+    end = i + 256;
+    frame = new Frame({
+      more: end < totalLength,
+      command: isCommand,
+      body: data.slice(i, end)
+    });
+    this.push(frame.toBuffer());
   }
 };
 
@@ -220,10 +232,15 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
     }
     else if (this._state === 'frame-header-flags') {
       // TODO: support long frames
+<<<<<<< Updated upstream
       thisFrame = {
         more: !!(byte & FRAME_MORE),
         command: !!(byte & FRAME_COMMAND)
       };
+=======
+      thisFrame = new Frame();
+      thisFrame.parseFlags(byte);
+>>>>>>> Stashed changes
       this._frameBodyBytes = 0;
       this._frames.push(thisFrame);
       this._state = 'frame-header-size';
@@ -248,3 +265,10 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
   }
   callback();
 };
+<<<<<<< Updated upstream
+=======
+
+ZMTP.prototype.send = function (message) {
+  this._writeFramed(false, new Buffer(message));
+};;
+>>>>>>> Stashed changes

@@ -13,5 +13,11 @@ var netSock = net.connect({ host: '127.0.0.1', port: 1337 }, function () {
 netSock.pipe(zmtp).pipe(netSock);
 
 zmtp.on('message', function (msg) {
-  console.log('Got a message:', msg.toString('utf8'));
+  console.log('ZMTP:', msg.toString('utf8'));
+
+  zmtp.send('hello, ZMTP!');
+});
+
+zmqSock.on('message', function (msg) {
+  console.log('ZMQ:', msg.toString('utf8'));
 });
