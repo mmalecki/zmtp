@@ -63,6 +63,7 @@ var COMMAND_LONG = 0x06;
 //   * bit 0: MORE, 1 if there are more frames to follow (incomplete frame),
 //     0 if this is the last frame for this message
 //
+var READY = new Buffer('READY');
 
 var ZMTP = module.exports = function (options) {
   if (!(this instanceof ZMTP)) {
@@ -125,16 +126,11 @@ ZMTP.prototype._writeCommand = function (name, data) {
   // If command body (name + data) is smaller than 255 octets, we can use the
   // shorter length specifier: x04 octet
   // Otherwise, x06 8 * octet.
-  var length = name.length + data.length;
-  if (length <= 0xFF) {
-    this.push(new Buffer([ COMMAND_SHORT, length ]));
-  }
-  else {
-    // TODO: longer packets
-  }
-
-  this.push(name);
-  this.push(data);
+  var header = new Buffer([ COMMAND_SHORT, name.length ]);
+  var length = header.length + name.length + data.length;
+  var cmd = Buffer.concat([ header, name, data ], length);
+  // TODO: add sanity checking to command length, can't exceed frame length
+  this._writeFramed(true, cmd);
 };
 
 ZMTP.prototype._nullHandshake = function () {
@@ -148,7 +144,7 @@ ZMTP.prototype._nullHandshake = function () {
   metadata.write(key, 1);
   metadata.writeUInt32BE(value.length, key.length + 1);
   metadata.write(value, key.length + 5);
-  this._writeCommand('\x05READY', metadata);
+  this._writeCommand(READY, metadata);
 };
 
 ZMTP.prototype._parseCommand = function (body) {
