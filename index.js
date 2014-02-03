@@ -1,6 +1,7 @@
 var Transform = require('stream').Transform;
 var util = require('util');
 var bufferEqual = require('buffer-equal');
+var Frame = require('./lib/frame.js');
 
 //
 // http://rfc.zeromq.org/spec:23
@@ -232,15 +233,8 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
     }
     else if (this._state === 'frame-header-flags') {
       // TODO: support long frames
-<<<<<<< Updated upstream
-      thisFrame = {
-        more: !!(byte & FRAME_MORE),
-        command: !!(byte & FRAME_COMMAND)
-      };
-=======
       thisFrame = new Frame();
       thisFrame.parseFlags(byte);
->>>>>>> Stashed changes
       this._frameBodyBytes = 0;
       this._frames.push(thisFrame);
       this._state = 'frame-header-size';
@@ -265,10 +259,7 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
   }
   callback();
 };
-<<<<<<< Updated upstream
-=======
 
 ZMTP.prototype.send = function (message) {
   this._writeFramed(false, new Buffer(message));
-};;
->>>>>>> Stashed changes
+};
