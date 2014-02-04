@@ -63,6 +63,7 @@ var COMMAND_LONG = 0x06;
 //   * bit 0: MORE, 1 if there are more frames to follow (incomplete frame),
 //     0 if this is the last frame for this message
 //
+var READY = new Buffer('READY');
 
 var ZMTP = module.exports = function (options) {
   if (!(this instanceof ZMTP)) {
@@ -151,7 +152,17 @@ ZMTP.prototype._nullHandshake = function () {
   this._writeCommand('\x05READY', metadata);
 };
 
+ZMTP.prototype._parseNullHandshake = function (data) {
+  this.emit('ready');
+};
+
 ZMTP.prototype._parseCommand = function (body) {
+  var nameLength = body[0];
+  var name = body.slice(1, nameLength + 1);
+  var data = body.slice(nameLength + 1);
+  if (bufferEqual(name, READY)) {
+    this._parseNullHandshake(data);
+  }
 };
 
 ZMTP.prototype._parseMessage = function (body) {
