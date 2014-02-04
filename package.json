@@ -5,11 +5,15 @@
   "dependencies": {
     "buffer-equal": "0.0.0"
   },
-  "scripts": {
-    "test": "tap test/*-test.js"
-  },
   "devDependencies": {
     "zmq": "~2.6.0",
     "tap": "~0.4.8"
+  },
+  "scripts": {
+    "test": "tap test/*-test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mmalecki/zmtp.git"
   }
 }
