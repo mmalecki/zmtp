@@ -126,7 +126,7 @@ ZMTP.prototype._writeCommand = function (name, data) {
   // If command body (name + data) is smaller than 255 octets, we can use the
   // shorter length specifier: x04 octet
   // Otherwise, x06 8 * octet.
-  var length = name.length + data.length;
+  var length = name.length + data.length + 1;
   if (length <= 0xFF) {
     this.push(new Buffer([ COMMAND_SHORT, length ]));
   }
@@ -134,6 +134,7 @@ ZMTP.prototype._writeCommand = function (name, data) {
     // TODO: longer packets
   }
 
+  this.push(new Buffer([ name.length ]));
   this.push(name);
   this.push(data);
 };
@@ -149,7 +150,7 @@ ZMTP.prototype._nullHandshake = function () {
   metadata.write(key, 1);
   metadata.writeUInt32BE(value.length, key.length + 1);
   metadata.write(value, key.length + 5);
-  this._writeCommand('\x05READY', metadata);
+  this._writeCommand(READY, metadata);
 };
 
 ZMTP.prototype._parseNullHandshake = function (data) {
