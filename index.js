@@ -204,16 +204,15 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
       }
     }
     else if (this._state === 'version-major') {
-      if (byte !== VERSION_MAJOR[0]) {
-        this.emit('error', new Error('Invalid revision, expected x03, got ' + byte));
+      if (byte < VERSION_MAJOR[0]) {
+        this.emit('error', new Error('Invalid major revision, got ' + byte + ', expected at least ' + VERSION_MAJOR[0]));
       }
+      this.peerMajorVersion = byte;
       this.push(VERSION_MAJOR);
       this._state = 'version-minor';
     }
     else if (this._state === 'version-minor') {
-      if (byte !== VERSION_MINOR[0]) {
-        this.emit('error', new Error('Invalid minor version, expected x00, got ' + byte));
-      }
+      this.peerMinorVersion = byte;
       this.push(VERSION_MINOR);
       this._state = 'mechanism';
     }
