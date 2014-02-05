@@ -4,22 +4,19 @@ var zmq = require('zmq');
 var ZMTP = require('../');
 var connect = require('./helpers/connect.js');
 
-var PORT = 5892;
+var PORT = 5893;
 var HELLO = 'hello, ZMTP!';
 
-test('zmtp/push-pull', function (t) {
-  var zmqSock = zmq.socket('pull');
+test('zmtp/pull-push/zmtp-zmq', function (t) {
+  var zmqSock = zmq.socket('push');
   zmqSock.bindSync('tcp://127.0.0.1:' + PORT);
 
-  var zmtp = connect(PORT, { type: 'push' }, function (err) {
+  var zmtp = connect(PORT, { type: 'pull' }, function (err) {
     t.ok(!err, 'Connecting should work');
-
-    zmtp.once('ready', function () {
-      zmtp.send(HELLO);
-    });
+    zmqSock.send(HELLO);
   });
 
-  zmqSock.on('message', function (msg) {
+  zmtp.on('message', function (msg) {
     t.equal(msg.toString(), HELLO);
     t.end();
 
