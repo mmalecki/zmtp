@@ -90,11 +90,13 @@ util.inherits(ZMTP, Transform);
 
 ZMTP.prototype._parseSignature = function () {
   var signature = this._signature;
-  if (signature.readUInt8(0) !== 0xFF) {
+  var byte = signature.readUInt(8);
+  if (byte !== 0xFF) {
     return this.emit('error', new Error('Invalid first byte of signature, xFF expected, got ' + byte));
   }
 
-  if (signature.readUInt8(SIGNATURE_LENGTH - 1) !== 0x7F) {
+  byte = signature.readUInt8(SIGNATURE_LENGTH - 1);
+  if (byte !== 0x7F) {
     return this.emit('error', new Error('Invalid last byte of signature, x7F expected, got ' + byte));
   }
 };
