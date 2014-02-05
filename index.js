@@ -12,7 +12,7 @@ var Frame = require('./lib/frame.js');
 // ZMTP connection starts with a greeting (parser state -> 'greeting').
 // First in greeting comes a signature, 10 bytes: xFF 8 * x00 x7F (parser state
 // -> 'signature').
-var SIGNATURE_LENGTH = 10;
+var SIGNATURE = new Buffer([ 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0x7F ]);
 // Next comes protocol version, x03 x00 for ZMTP 3.0. (parser state ->
 // 'version-major', 'version-minor'). We should error out here if we can't
 // recognize the protocol version.
@@ -20,8 +20,8 @@ var VERSION_MAJOR = new Buffer([3]);
 var VERSION_MINOR = new Buffer([0]);
 // Next is security mechanism. There are 3 of those (NULL, CURVE, PLAIN), we
 // only support NULL:
-var MECHANISM_NULL = new Buffer('NULL\0'); // No authentication or confidentiality.
-var MECHANISM_LENGTH = 20;
+var MECHANISM_NULL = new Buffer('NULL\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0');
+var MECHANISM_LENGTH = MECHANISM_NULL.length;
 // Next up is `as-server` field. Its value is either 0 or 1, depending on
 // security mechanism. For NULL it's always 0 and NULL is the only mechanism
 // we support rigth now.
@@ -73,7 +73,7 @@ var ZMTP = module.exports = function (options) {
   this.type = options.type.toUpperCase();
 
   this._state = 'start';
-  this._signature = new Buffer(SIGNATURE_LENGTH);
+  this._signature = new Buffer(SIGNATURE.length);
   this._signatureBytes = 0;
 
   this._mechanism = new Buffer(MECHANISM_LENGTH);
@@ -84,18 +84,22 @@ var ZMTP = module.exports = function (options) {
   this._frames = [];
   this._frameBodyBytes = 0;
 
-  Transform.call(this, { objectMode: true });
+  this.on('pipe', function () {
+    this.push(SIGNATURE);
+  });
+
+  Transform.call(this);
 };
 util.inherits(ZMTP, Transform);
 
 ZMTP.prototype._parseSignature = function () {
   var signature = this._signature;
-  var byte = signature.readUInt(8);
+  var byte = signature.readUInt8(0);
   if (byte !== 0xFF) {
     return this.emit('error', new Error('Invalid first byte of signature, xFF expected, got ' + byte));
   }
 
-  byte = signature.readUInt8(SIGNATURE_LENGTH - 1);
+  byte = signature.readUInt8(SIGNATURE.length - 1);
   if (byte !== 0x7F) {
     return this.emit('error', new Error('Invalid last byte of signature, x7F expected, got ' + byte));
   }
@@ -104,7 +108,7 @@ ZMTP.prototype._parseSignature = function () {
 ZMTP.prototype._parseMechanism = function () {
   var mechanism = this._mechanism;
   // TODO: support other mechanisms
-  if (!bufferEqual(mechanism.slice(0, MECHANISM_NULL.length), MECHANISM_NULL)) {
+  if (!bufferEqual(mechanism, MECHANISM_NULL)) {
     this.emit('error', new Error('Unsupported mechanism'));
   }
 };
@@ -192,17 +196,21 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
   var mechanism = this._mechanism;
   var thisFrame;
 
+  console.log('chunk', chunk.toString('hex'));
+  console.log(this._state);
   while (offset < chunk.length) {
     byte = chunk.readUInt8(offset++);
     if (this._state === 'start') {
-      if (this._signatureBytes < SIGNATURE_LENGTH) {
+      if (this._signatureBytes < SIGNATURE.length) {
         signature[this._signatureBytes++] = byte;
       }
 
-      if (this._signatureBytes === SIGNATURE_LENGTH) {
+      console.log(this._signatureBytes, SIGNATURE.length);
+      if (this._signatureBytes === SIGNATURE.length) {
         this._parseSignature();
-        this.push(signature);
         this._state = 'version-major';
+        this.push(VERSION_MAJOR);
+        this.push(VERSION_MINOR);
       }
     }
     else if (this._state === 'version-major') {
@@ -210,13 +218,12 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
         this.emit('error', new Error('Invalid major revision, got ' + byte + ', expected at least ' + VERSION_MAJOR[0]));
       }
       this.peerMajorVersion = byte;
-      this.push(VERSION_MAJOR);
       this._state = 'version-minor';
     }
     else if (this._state === 'version-minor') {
       this.peerMinorVersion = byte;
-      this.push(VERSION_MINOR);
       this._state = 'mechanism';
+      this.push(MECHANISM_NULL);
     }
     else if (this._state === 'mechanism') {
       if (this._mechanismBytes < MECHANISM_LENGTH) {
@@ -225,20 +232,18 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
 
       if (this._mechanismBytes === MECHANISM_LENGTH) {
         this._parseMechanism();
-        // TODO: reply with something
-        this.push(mechanism);
         this._state = 'as-server';
+        this.push(new Buffer([0]));
       }
     }
     else if (this._state === 'as-server') {
-      // TODO: for non-NULL mechanism, we need to support non-zero `as-server` field
-      this.push(new Buffer([0]));
+      // Just discard this byte, following the spec.
       this._state = 'filler';
+      this.push(FILLER);
     }
     else if (this._state === 'filler') {
       ++this._fillerBytes;
       if (this._fillerBytes === FILLER.length) {
-        this.push(FILLER);
         this._nullHandshake();
         this._state = 'frame-header-flags';
       }
