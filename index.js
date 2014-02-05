@@ -203,7 +203,6 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
         signature[this._signatureBytes++] = byte;
       }
 
-      console.log(this._signatureBytes, SIGNATURE.length);
       if (this._signatureBytes === SIGNATURE.length) {
         this._parseSignature();
         this._state = 'version-major';
