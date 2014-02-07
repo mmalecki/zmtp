@@ -84,6 +84,9 @@ var ZMTP = module.exports = function (options) {
   this._frames = [];
   this._frameBodyBytes = 0;
 
+  this.peerMajorVersion = null;
+  this.peerMinorVersion = null;
+
   this.on('pipe', function () {
     this.push(SIGNATURE);
   });
