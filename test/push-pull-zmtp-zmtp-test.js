@@ -22,6 +22,7 @@ test('zmtp/pull-push/zmtp-zmtp', function (t) {
       t.equal(msg.toString(), HELLO);
       t.end();
 
+      pull.end();
       server.close();
     });
   });
