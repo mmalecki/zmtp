@@ -65,33 +65,7 @@ var COMMAND_LONG = 0x06;
 //
 var READY = new Buffer('READY');
 
-function frameHeaderFlags(zmtp, byte) {
-  // TODO: support long frames
-  var frame = new Frame();
-  frame.parseFlags(byte);
-  zmtp._frameBodyBytes = 0;
-  zmtp._frames.push(frame);
-  zmtp._state = 'frame-header-size';
-}
 
-function frameHeaderSize(zmtp, byte, frame) {
-  frame = zmtp._frames[zmtp._frames.length - 1];
-  frame.length = byte;
-  frame.body = new Buffer(frame.length);
-  zmtp._state = 'frame-body';
-}
-
-function frameBody(zmtp, byte, frame) {
-  frame = zmtp._frames[zmtp._frames.length - 1];
-  frame.body[zmtp._frameBodyBytes++] = byte;
-  if (zmtp._frameBodyBytes === frame.length) {
-    if (!frame.more) {
-      zmtp._processFrames();
-      zmtp._frames.length = 0;
-    }
-    zmtp._state = 'frame-header-flags';
-  }
-}
 
 var ZMTP = module.exports = function (options) {
   if (!(this instanceof ZMTP)) {
@@ -109,6 +83,7 @@ var ZMTP = module.exports = function (options) {
 
   this._fillerBytes = 0;
 
+  this._frame = null;
   this._frames = [];
   this._frameBodyBytes = 0;
 
@@ -207,83 +182,137 @@ ZMTP.prototype._parseMessage = function (body) {
   this.emit('message', body);
 };
 
+function frameBody(frame) {
+  return frame.body;
+}
+
+function concatFrames(frames) {
+  return Buffer.concat(frames.map(frameBody));
+}
+
 ZMTP.prototype._processFrames = function () {
   // TODO: this is a naive approach where we concat all our frames to process
   // them. We might not have to do that, which'd be beneficial for memory usage.
-  var body = Buffer.concat(this._frames.map(function (frame) {
-    return frame.body;
-  }));
+  var body = concatFrames(this._frames);
 
   return this._frames[0].command
     ? this._parseCommand(body)
     : this._parseMessage(body);
 };
 
+ZMTP.prototype._start = function (byte) {
+  if (this._signatureBytes < SIGNATURE.length) {
+    this._signature[this._signatureBytes++] = byte;
+  }
+
+  if (this._signatureBytes === SIGNATURE.length) {
+    this._parseSignature();
+    this._state = 'version-major';
+    this.push(VERSION_MAJOR);
+    this.push(VERSION_MINOR);
+  }
+};
+
+ZMTP.prototype._versionMajor = function (byte) {
+  if (byte < VERSION_MAJOR[0]) {
+    this.emit('error', new Error('Invalid major revision, got ' + byte + ', expected at least ' + VERSION_MAJOR[0]));
+  }
+  this.peerMajorVersion = byte;
+  this._state = 'version-minor';
+};
+
+ZMTP.prototype._versionMinor = function (byte) {
+  this.peerMinorVersion = byte;
+  this._state = 'mechanism';
+  this.push(MECHANISM_NULL);
+};
+
+ZMTP.prototype._mechanism_ = function (byte) {
+  if (this._mechanismBytes < MECHANISM_LENGTH) {
+    this._mechanism[this._mechanismBytes++] = byte;
+  }
+
+  if (this._mechanismBytes === MECHANISM_LENGTH) {
+    this._parseMechanism();
+    this._state = 'as-server';
+    this.push(new Buffer([0]));
+  }
+};
+
+ZMTP.prototype._asServer = function (byte) {
+  // Just discard this byte, following the spec.
+  this._state = 'filler';
+  this.push(FILLER);
+};
+
+ZMTP.prototype._filler = function (byte) {
+  ++this._fillerBytes;
+  if (this._fillerBytes === FILLER.length) {
+    this._nullHandshake();
+    this._state = 'frame-header-flags';
+  }
+};
+
+ZMTP.prototype._frameHeaderFlags = function (byte) {
+  // TODO: support long frames
+  this._frame = new Frame();
+  this._frame.parseFlags(byte);
+  this._frameBodyBytes = 0;
+  this._frames.push(this._frame);
+  this._state = 'frame-header-size';
+};
+
+ZMTP.prototype._frameHeaderSize = function (byte) {
+  var frame = this._frame;
+  frame.length = byte;
+  frame.body = new Buffer(frame.length);
+  this._state = 'frame-body';
+}
+
+ZMTP.prototype._frameBody = function (byte) {
+  var frame = this._frame;
+  frame.body[this._frameBodyBytes++] = byte;
+  if (this._frameBodyBytes === frame.length) {
+    if (!frame.more) {
+      this._processFrames();
+      this._frames.length = 0;
+    }
+    this._state = 'frame-header-flags';
+  }
+}
 ZMTP.prototype._transform = function (chunk, enc, callback) {
   var self = this;
   var offset = 0;
   var byte;
-  var signature = this._signature;
-  var mechanism = this._mechanism;
-  var thisFrame;
 
   while (offset < chunk.length) {
     byte = chunk.readUInt8(offset++);
     if (this._state === 'start') {
-      if (this._signatureBytes < SIGNATURE.length) {
-        signature[this._signatureBytes++] = byte;
-      }
-
-      if (this._signatureBytes === SIGNATURE.length) {
-        this._parseSignature();
-        this._state = 'version-major';
-        this.push(VERSION_MAJOR);
-        this.push(VERSION_MINOR);
-      }
+      this._start(byte);
     }
     else if (this._state === 'version-major') {
-      if (byte < VERSION_MAJOR[0]) {
-        this.emit('error', new Error('Invalid major revision, got ' + byte + ', expected at least ' + VERSION_MAJOR[0]));
-      }
-      this.peerMajorVersion = byte;
-      this._state = 'version-minor';
+      this._versionMajor(byte);
     }
     else if (this._state === 'version-minor') {
-      this.peerMinorVersion = byte;
-      this._state = 'mechanism';
-      this.push(MECHANISM_NULL);
+      this._versionMinor(byte);
     }
     else if (this._state === 'mechanism') {
-      if (this._mechanismBytes < MECHANISM_LENGTH) {
-        mechanism[this._mechanismBytes++] = byte;
-      }
-
-      if (this._mechanismBytes === MECHANISM_LENGTH) {
-        this._parseMechanism();
-        this._state = 'as-server';
-        this.push(new Buffer([0]));
-      }
+      this._mechanism_(byte);
     }
     else if (this._state === 'as-server') {
-      // Just discard this byte, following the spec.
-      this._state = 'filler';
-      this.push(FILLER);
+      this._asServer(byte);
     }
     else if (this._state === 'filler') {
-      ++this._fillerBytes;
-      if (this._fillerBytes === FILLER.length) {
-        this._nullHandshake();
-        this._state = 'frame-header-flags';
-      }
+      this._filler(byte);
     }
     else if (this._state === 'frame-header-flags') {
-      thisFrame = frameHeaderFlags(this, byte);
+      this._frameHeaderFlags(byte);
     }
     else if (this._state === 'frame-header-size') {
-      frameHeaderSize(this, byte, thisFrame);
+      this._frameHeaderSize(byte);
     }
     else if (this._state === 'frame-body') {
-      frameBody(this, byte, thisFrame);
+      this._frameBody(byte);
     }
   }
   callback();
