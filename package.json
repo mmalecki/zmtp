@@ -7,7 +7,8 @@
   },
   "devDependencies": {
     "zmq": "~2.6.0",
-    "tap": "~0.4.8"
+    "tap": "~0.4.8",
+    "bench": "~0.3.5"
   },
   "scripts": {
     "test": "tap test/*-test.js"
