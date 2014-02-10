@@ -11,7 +11,8 @@
     "bench": "~0.3.5"
   },
   "scripts": {
-    "test": "tap test/*-test.js"
+    "test": "tap test/*-test.js",
+    "bench": "node bench/throughput.js"
   },
   "repository": {
     "type": "git",
