@@ -1,7 +1,7 @@
 var crypto = require('crypto');
 var test = require('tap').test;
-var net = require('net');
 var zmq = require('zmq');
+var bufferEqual = require('buffer-equal');
 var ZMTP = require('../');
 
 var RANDOM = crypto.randomBytes(4096);
@@ -16,7 +16,7 @@ test('zmtp/pull-push/zmtp-zmtp', function (t) {
 
   pull.pipe(push).pipe(pull);
   pull.on('message', function (msg) {
-    t.equal(msg, RANDOM);
+    t.ok(bufferEqual(msg, RANDOM), 'buffers must be equal');
     t.end();
   });
 });
