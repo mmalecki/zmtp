@@ -214,14 +214,14 @@ ZMTP.prototype._start = function (byte) {
 };
 
 ZMTP.prototype._versionMajor = function (byte) {
-  if (byte < VERSION_MAJOR[0]) {
-    this.emit('error', new Error('Invalid major revision, got ' + byte + ', expected at least ' + VERSION_MAJOR[0]));
-  }
   this.peerMajorVersion = byte;
   this._state = 'version-minor';
 };
 
 ZMTP.prototype._versionMinor = function (byte) {
+  if (this.peerMajorVersion < VERSION_MAJOR[0] || byte < VERSION_MINOR[0]) {
+    this.emit('error', new Error('Invalid minor revision, got ' + byte + ', expected at least ' + VERSION_MAJOR[0]));
+  }
   this.peerMinorVersion = byte;
   this._state = 'mechanism';
   this.push(MECHANISM_NULL);
