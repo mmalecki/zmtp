@@ -65,6 +65,34 @@ var COMMAND_LONG = 0x06;
 //
 var READY = new Buffer('READY');
 
+function frameHeaderFlags(zmtp, byte) {
+  // TODO: support long frames
+  var frame = new Frame();
+  frame.parseFlags(byte);
+  zmtp._frameBodyBytes = 0;
+  zmtp._frames.push(frame);
+  zmtp._state = 'frame-header-size';
+}
+
+function frameHeaderSize(zmtp, byte, frame) {
+  frame = zmtp._frames[zmtp._frames.length - 1];
+  frame.length = byte;
+  frame.body = new Buffer(frame.length);
+  zmtp._state = 'frame-body';
+}
+
+function frameBody(zmtp, byte, frame) {
+  frame = zmtp._frames[zmtp._frames.length - 1];
+  frame.body[zmtp._frameBodyBytes++] = byte;
+  if (zmtp._frameBodyBytes === frame.length) {
+    if (!frame.more) {
+      zmtp._processFrames();
+      zmtp._frames.length = 0;
+    }
+    zmtp._state = 'frame-header-flags';
+  }
+}
+
 var ZMTP = module.exports = function (options) {
   if (!(this instanceof ZMTP)) {
     return new ZMTP(options);
@@ -261,33 +289,6 @@ ZMTP.prototype._transform = function (chunk, enc, callback) {
   callback();
 };
 
-function frameHeaderFlags(zmtp, byte) {
-  // TODO: support long frames
-  var frame = new Frame();
-  frame.parseFlags(byte);
-  zmtp._frameBodyBytes = 0;
-  zmtp._frames.push(frame);
-  zmtp._state = 'frame-header-size';
-}
-
-function frameHeaderSize(zmtp, byte, frame) {
-  frame = zmtp._frames[zmtp._frames.length - 1];
-  frame.length = byte;
-  frame.body = new Buffer(frame.length);
-  zmtp._state = 'frame-body';
-}
-
-function frameBody(zmtp, byte, frame) {
-  frame = zmtp._frames[zmtp._frames.length - 1];
-  frame.body[zmtp._frameBodyBytes++] = byte;
-  if (zmtp._frameBodyBytes === frame.length) {
-    if (!frame.more) {
-      zmtp._processFrames();
-      zmtp._frames.length = 0;
-    }
-    zmtp._state = 'frame-header-flags';
-  }
-}
 ZMTP.prototype.send = function (message) {
   this._writeFramed(false, new Buffer(message));
 };
