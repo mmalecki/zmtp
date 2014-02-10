@@ -123,8 +123,8 @@ ZMTP.prototype._writeFramed = function (isCommand, data) {
   var totalLength = data.length;
   var frameBody, frame, end;
 
-  for (var i = 0; i < data.length; i += 256) {
-    end = i + 256;
+  for (var i = 0; i < data.length; i += 255) {
+    end = i + 255;
     frame = new Frame({
       more: end < totalLength,
       command: isCommand,
